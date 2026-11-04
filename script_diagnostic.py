@@ -49,13 +49,13 @@ avant = len(data)
 data = data.drop_duplicates(subset=[c for c in data.columns if c != 'dr_no'])
 print("\nDoublons supprimés :", avant - len(data))
 
-# 2.2- Colonnes inutiles (vides ou redondantes ou non pertinentes dans l'analyse)
-colonnes_inutiles = ['latitude', 'longitude', 'location', 'rpt_dist_no',
-                     'mocodes', 'weapon_used_cd', 'vict_descent', 'date_rptd',
-                     'crm_cd_1', 'crm_cd_2', 'crm_cd_3', 'crm_cd_4',
-                     'cross_street', 'area', 'status', 'premis_cd']
-data = data.drop(columns=inutiles)
+# 2.2- Colonnes inutiles (vides ou redondantes)
+colonnes_inutiles = ['crm_cd_1', 'crm_cd_2', 'crm_cd_3', 'crm_cd_4',
+                     'cross_street', 'area', 'status', 'premis_cd', 'weapon_used_cd']
+data = data[colonnes_inutiles]
+data = data.drop(columns=colonnes_inutiles)
 
+# 2.2.1- Colonnes inutiles et pourquoi
 # crm_cd_4 :        100 % vide (aucune information)
 # crm_cd_3 :        99,8 % vide (aucune information)
 # crm_cd_2 :        93 % vide (crime secondaire rarissime, trop peu de cas pour une analyse)
@@ -100,12 +100,27 @@ data['arme_utilisee'] = data['weapon_desc'] != 'Aucune arme déclarée'
 data['plage'] = pd.cut(data['heure'], [-1, 4, 11, 16, 20, 23],
                      labels=['nuit', 'matin', 'après-midi', 'soirée', 'nuit'], ordered=False)
 
+colonnes_nouvelles = ['date_occ', 'annee', 'mois', 'jour_semaine', 'heure', 'heure_midi_exact', 'plage', 'weekend',
+          'arme_utilisee', 'arme_a_feu', 'gravite_score', 'gravite', 'area_name_code', 'premis_desc_code', 'vict_sex_code', 'crm_cd_desc_code']
+data = data[colonnes_nouvelles]
+
+# 2.7.1- Nouvelles variables et pourquoi
+# annee, mois, jour_semaine :   Mesurent l’évolution, la saisonnalité et le rythme hebdomadaire
+# heure :	                    time_occ est du texte ; l’heure entière permet l’analyse horaire
+# heure_midi_exact :        	12h00 pile est une heure par défaut, ce qui crée un faux pic à midi
+# arme_utilisee	:               Remplace weapon_used_cd (67 % vide) par un simple oui/non
+# plage :                    	Quatre plages sont plus lisibles que 24 heures
+# arme_a_feu :                	Isole les vraies armes à feu grâce aux codes officiels
+# weekend :                    	Teste directement « le week-end est-il plus touché ? »
+# gravite_score, gravite :    	La base n’a aucune mesure de gravité, or le projet la cherche
+# Les 4 colonnes _code :    	Les modèles n’acceptent que des nombres
+
 data.to_csv('Crime_Data_Nettoye_Simple.csv', index=False, encoding='utf-8-sig')
 print("\nLignes après nettoyage :", len(data), "| colonnes :", data.shape[1])
 
 ##########################################################################################
 # 3- Transformation simplifiée : enrichit le fichier nettoyé.
-data = pd.read_csv(sys.argv[1], parse_dates=['date_occ])
+data = pd.read_csv(sys.argv[1], parse_dates=['date_occ'])
 
 # 3.1- Armes : codes LAPD (101-110 et 115-125 = armes à feu ; 111-114 = imitations)
 # arme_a_feu : le critère « arme présente » mélange force physique et menaces verbales (plus de la
@@ -121,8 +136,7 @@ data['weekend'] = data['jour_semaine'].isin(['saturday', 'sunday'])
 # 3.3- Score de gravité = 2 (crime Partie 1) + 1 (arme) + 2 (arme à feu)
 # gravite_score : le jeu de données n'a aucune variable de gravité, or le projet cherche les facteurs
 data['gravite_score'] = ((data['part_1_2'] == 1) * 2) + data['arme_utilisee'] * 1 + data['arme_a_feu'] * 2
-# Gravite: 4 niveaux lisibles(Faible, Modérée, Élevée, Très élevée) pour
-les tableaux, tests et modèles.
+# Gravite: 4 niveaux lisibles(Faible, Modérée, Élevée, Très élevée) pour les tableaux, tests et modèles.
 data['gravite'] = data['gravite_score'].map(lambda s: 'Faible' if s == 0 else 'Modérée' if s <= 2
                                         else 'Élevée' if s == 3 else 'Très élevée')
 
@@ -133,17 +147,43 @@ for c in ['area_name', 'premis_desc', 'vict_sex', 'crm_cd_desc']:
     data[c + '_code'] = data[c].astype('category').cat.codes
 
 # 3.5- Ne garder que les colonnes pertinentes pour l'analyse et les modèles
-colonnes_gardees = ['dr_nO', 'date_occ', 'annee', 'mois', 'jour_semaine', 'heure', 'heure_midi_exact', 'plage', 'weekend',
+colonnes_gardees = ['dr_no', 'date_occ', 'annee', 'mois', 'jour_semaine', 'heure', 'heure_midi_exact', 'plage', 'weekend',
           'area_name', 'premis_desc', 'crm_cd_desc', 'part_1_2', 'vict_age', 'vict_sex',
           'weapon_desc', 'arme_utilisee', 'arme_a_feu', 'status_desc', 'gravite_score', 'gravite',
           'area_name_code', 'premis_desc_code', 'vict_sex_code', 'crm_cd_desc_code']
 data = data[colonnes_gardees]
 
-# Colonnes retirées car non utilisées dans l'analyse ni dans les modèles :
+## 3.5.1- Colonnes conservées et pourquoi
+# dr_no :                       Identifiant unique de l’incident ; sert de clé, jamais de variable explicative
+# date_occ :                    Date de survenue, base des séries temporelles (tendances mensuelles et annuelles)
+# annee, mois, jour_semaine, weekend : tendances, saisonnalité, rythme hebdomadaire
+# heure, plage :                Analyse horaire et période de la journée la plus touchée
+# heure_midi_exact :            corrige le faux pic de 12h00
+# area_name :        	        Analyse géographique des zones les plus touchées (21 zones)
+# premis_desc :        	        Type de lieu, facteur contextuel de la nature et de la gravité
+# crm_cd_desc :        	        Nature du crime, la variable à expliquer ou à prédire
+# part_1_2 :        	        Crime majeur ou non, composante du score de gravité
+# vict_age :        	        Profil de la victime (statistiques descriptives)
+# vict_sex :        	        Profil de la victime, facteur de la nature du crime
+# weapon_desc :        	        Type d’arme déclarée (force physique, arme à feu, etc.)
+# status_desc :                 Statut de traitement du dossier (en cours, arrestation, etc.)
+# arme_utilisee, arme_a_feu :   indicateurs d'arme, composantes du score de gravité
+# gravite_score, gravite :      variable à expliquer pour les facteurs de gravité
+#   *_code                 :    versions numériques des variables texte pour les modèles
+# Deux nuances :
+                # age de la victime :  est utilisé qu’en statistiques descriptives, pas dans les modèles. On peut aussi le juger non pertinent et le retirer.
+                # sexe de la victime : pèse beaucoup dans le modèle du type de crime, mais surtout parce qu’il distingue les crimes contre les biens des crimes contre la personne (voir 5.5 du rapport).
+
+# 3.6- Colonnes retirées car non utilisées dans l'analyse ni dans les modèles :
+colonnes_retirees = ['latitude', 'longitude', 'location', 'rpt_dist_no', 'mocodes', 'weapon_used_cd',
+                     'vict_descent', 'cmr_cd', 'date_rptd']
+data = data[colonnes_retirees]
+
+# 3.6.1- Colonnes retirées et pourquoi
 # latitude et longitude :   l'analyse géographique se fait par zone de police (AREA NAME, 21 zones) ;
                             # les coordonnées ne servent qu'à une carte fine, hors du périmètre actuel
 # location :                adresse en texte, quasi unique à chaque ligne, redondante avec latitude/longitude
-# rpt_ist_no :              1 209 districts, trop fin pour les modèles ; la zone suffit
+# rpt_dist_no :              1 209 districts, trop fin pour les modèles ; la zone suffit
 # mocodes :                 codes de mode opératoire multiples, 15 % vides, trop complexes à exploiter ici
 # weapon_used_cd :          déjà résumée par Weapon Desc et les indicateurs d'arme (utilisée plus haut)
 # vict_descent :            non utilisée dans les analyses ni les modèles de ce projet
