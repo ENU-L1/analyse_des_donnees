@@ -172,7 +172,7 @@ data = data[colonnes_gardees]
 #   *_code                 :    versions numériques des variables texte pour les modèles
 # Deux nuances :
                 # age de la victime :  est utilisé qu’en statistiques descriptives, pas dans les modèles. On peut aussi le juger non pertinent et le retirer.
-                # sexe de la victime : pèse beaucoup dans le modèle du type de crime, mais surtout parce qu’il distingue les crimes contre les biens des crimes contre la personne (voir 5.5 du rapport).
+                # sexe de la victime : pèse beaucoup dans le modèle du type de crime, mais surtout parce qu’il distingue les crimes contre les biens des crimes contre la personne.
 
 # 3.6- Colonnes retirées car non utilisées dans l'analyse ni dans les modèles :
 colonnes_retirees = ['latitude', 'longitude', 'location', 'rpt_dist_no', 'mocodes', 'weapon_used_cd',
